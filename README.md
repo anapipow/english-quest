@@ -1,20 +1,32 @@
 # English Quest ✦
 
-Miniapp mobile-first para praticar inglês em situações reais: viagens, conversas cotidianas, entrevistas com cineastas, festivais de cinema e negócios internacionais.
+Miniapp mobile-first para praticar inglês A2–B1 em viagens, conversas cotidianas, entrevistas com cineastas, festivais de cinema e negócios internacionais. Sem login, backend, API paga ou dependências de produção.
 
-## O que funciona
+## Uma prática puxa a próxima
 
-- Missões com leitura, compreensão e áudio por síntese de voz do aparelho (quando disponível).
-- Conversação como etapa central: roteiro pronto para copiar e usar no modo de voz do ChatGPT, em outra aba ou aplicativo. Não há integração automática, gravação nem avaliação de fala no miniapp.
-- Prática normal ou modo de 5 minutos (1 min de preparação, 3 de conversa e 1 de reflexão). Os tempos são sugestões, sem cronômetro ou penalidade.
-- XP, níveis, conquistas, últimos sete dias e histórico. Cada tema concede XP uma vez por dia em cada modalidade; continuar praticando é sempre permitido.
-- Reflexão opcional e progresso local. Nada é enviado a um servidor. Os dados não são sincronizados entre aparelhos e são apagados ao limpar o armazenamento do navegador. O conteúdo enviado ao ChatGPT segue as condições desse serviço.
+- **Jornada:** três atividades curtas sugeridas para o tema escolhido, sem obrigação de ordem ou sequência. O modo de 5 minutos sugere 1 minuto de preparação, 3 de conversa e 1 de reflexão.
+- **Praticar:** biblioteca de 35 atividades com filtros combináveis de modalidade, tema e duração (2–5, 5–10 e 10–15 minutos). Nos limites, 5 minutos pertencem à faixa curta e 10 à intermediária, evitando duplicar resultados entre faixas.
+- **Conversação:** dez situações distintas e roteiros para usar no ChatGPT por voz, com expressões de apoio. O miniapp não acessa o microfone, integra o ChatGPT nem avalia sua fala. O roteiro precisa ser enviado em outra aba/aplicativo e o modo de voz depende da sua conta. Falar as respostas em voz alta também é uma alternativa.
+- **Listening:** dez atividades de áudio sintetizado pelo dispositivo, com duas perguntas cada. É possível parar, ouvir novamente ou abrir a transcrição. O áudio não é uma gravação humana; sotaque e qualidade dependem da voz instalada.
+- **Reading:** dez atividades com textos originais e perguntas de compreensão.
+- **Desafios rápidos:** cinco situações com feedback objetivo sobre a expressão escolhida.
+- **Progresso:** histórico completo, reflexões, dias de prática, XP, níveis e conquistas. “Continuar estudando” sugere uma atividade diferente da última, priorizando as menos praticadas no tema escolhido. Depois de concluir, escolha “Mais uma atividade”, “Escolher outra” ou apenas descanse.
 
-Sem cadastro, banco de dados, chaves de API, fontes externas ou serviços pagos necessários para o miniapp. O modo de voz depende da disponibilidade e dos limites da sua conta ChatGPT.
+Pode repetir qualquer atividade no mesmo dia. Cada nova prática recebe uma identificação única e concede XP ao concluir as perguntas ou confirmar a prática oral. Recarregar, retornar de outra aba ou clicar duas vezes não concede XP novamente à mesma prática. Durações são estimativas, sem cronômetro obrigatório. Não há punição por pausas.
 
-## Desenvolver e visualizar
+## Preservação dos dados do MVP
 
-Requer Node.js 20.19+ ou 22.12+ (validado aqui com Node 24) e npm.
+A chave **`english-quest`** em `localStorage` permanece a mesma. Não há limpeza do armazenamento nem migração destrutiva. XP (incluindo os 40 XP iniciais de quem já estudou), histórico, reflexões, tema e campos desconhecidos são mantidos. Conquistas existentes continuam válidas: sessões antigas sem modalidade contam como conversação. O total antigo de XP não é recalculado a partir do histórico.
+
+Novos registros acrescentam `activityId`, `mode`, `minutes` e uma identificação única de tentativa. `activeAttempt` guarda a prática atual para retomar depois de recarregar; `practiceDrafts` mantém práticas interrompidas quando você escolhe outra. Voltar à mesma atividade retoma seu rascunho; após concluí-la, abri-la novamente começa uma nova prática. Reflexões são exibidas como texto, nunca como HTML.
+
+Cada gravação parte da versão mais recente do armazenamento. Web Locks serializa as atualizações entre abas em navegadores compatíveis (incluindo Chromium atual). Sem essa API, há releitura síncrona antes de gravar; prefira uma aba por vez nesses navegadores. Dados ilegíveis não são sobrescritos; falhas de armazenamento são informadas e não geram confirmação de conclusão salva.
+
+Os dados continuam locais ao mesmo navegador e origem. Use o endereço habitual publicado: mudar de navegador, de domínio ou de perfil não transfere o progresso. Limpar os dados do navegador apaga o histórico; não é preciso fazer isso para atualizar o aplicativo. Esta versão não oferece sincronização entre aparelhos, backup automático ou funcionamento offline.
+
+## Desenvolvimento e testes
+
+Requer Node.js 20.19+ ou 22.12+ (validado com Node 24) e npm.
 
 ```sh
 cd /workspace/english-quest
@@ -22,48 +34,46 @@ npm ci
 npm run dev
 ```
 
-Abra a porta 5173 pela função de preview/encaminhamento de portas do seu editor, caso disponível. O endereço de loopback da máquina na nuvem não é acessível diretamente pelo seu celular. Para usar pelo celular sem depender dessa função, publique o site como descrito abaixo.
-
-No seu computador, abra o endereço exibido pelo Vite; para testar com um celular na mesma rede, use o IP de rede do computador e a porta 5173. Não exponha o servidor de desenvolvimento publicamente como hospedagem definitiva.
+Use o preview/encaminhamento de porta 5173 do editor, se disponível. Um endereço de loopback da máquina na nuvem não abre diretamente no celular. O servidor de desenvolvimento não é uma hospedagem pública definitiva.
 
 ```sh
-npm test          # Regras de XP, datas, níveis e recuperação do armazenamento
-npm run test:e2e  # Fluxo real de conversação, navegação e persistência em Chromium
-npm run build    # Site estático na pasta dist/
+npm test          # 8 testes de dados legados, XP, catálogo e filtros
+npm run test:e2e  # Fluxos no Chromium, mobile e desktop
+npm run build    # Site estático em dist/, com assets relativos
+npm run test:pages # Build já gerado, servido em /english-quest/
 npm run preview  # Conferir o build na porta 4173
 ```
 
-Os testes de navegador usam Chromium instalado em `/usr/bin/chromium`, se disponível; em outras máquinas, execute `npx playwright install chromium` antes. A configuração cobre viewport de celular e desktop. Voz real e troca para o aplicativo ChatGPT precisam de conferência manual no aparelho.
+Para os testes de navegador, usa-se `/usr/bin/chromium` se disponível; em outras máquinas execute `npx playwright install chromium`. No CI, `npx playwright install --with-deps chromium` instala o navegador e as bibliotecas necessárias. Os testes usam dados fictícios isolados, nunca os dados do aparelho da usuária.
 
-## Enviar as alterações ao GitHub
+## Revisão e publicação pelo celular
 
-A implementação não foi enviada automaticamente. Revise as alterações no painel de arquivos do seu editor/Codex e use sua opção de commit e envio ou criação de PR, se disponível. Em um terminal com permissão de escrita no repositório:
+Esta alteração deve ser revisada em um PR separado para `main`. O workflow executa testes e build nos PRs, mas o job de deploy só aceita `refs/heads/main`. Enviar a branch ou abrir o PR não publica o app.
 
-```sh
-cd /workspace/english-quest
-git switch -c feat/english-quest-mvp
-git add .gitignore README.md index.html package.json package-lock.json playwright.config.js src tests .github
-git commit -m "Build English Quest mobile-first MVP"
-git push -u origin feat/english-quest-mvp
-```
+**Não faça merge ou publique até autorizar a versão.** Após sua revisão e confirmação:
 
-Abra um pull request no GitHub e faça o merge para `main`. A autenticação de leitura do ambiente não garante permissão de push. Nunca coloque tokens nos arquivos.
+1. Faça o merge do PR na interface do GitHub.
+2. O workflow de Pages existente será iniciado pelo push na `main`; não é necessário executar comandos no celular.
+3. Confira o resultado em **Actions → Deploy English Quest**. Se Pages ainda não estiver configurado, escolha **Settings → Pages → Source → GitHub Actions**.
+4. Use o endereço habitual, normalmente `https://anapipow.github.io/english-quest/`.
 
-## Publicar o aplicativo pelo celular com GitHub Pages
+## Teste manual no Samsung Android
 
-1. Depois do merge, abra `github.com/anapipow/english-quest` no navegador do celular. Se necessário, use “Versão para computador”.
-2. Em **Settings → Pages → Build and deployment → Source**, escolha **GitHub Actions**.
-3. Em **Actions → Deploy English Quest → Run workflow**, selecione `main` e execute. Futuras alterações em `main` também iniciam a publicação.
-4. Ao concluir, o job `deploy` mostrará o endereço publicado; ele também aparece em **Settings → Pages**. Normalmente será `https://anapipow.github.io/english-quest/`.
-5. Abra esse endereço no celular e use **Adicionar à tela de início**, se disponível no navegador. Esta versão precisa de conexão para abrir o site; não oferece instalação/offline por service worker.
+Use Samsung Internet ou Chrome atualizado, no mesmo navegador em que seu progresso já existe. Não limpe dados nem use aba anônima para conferir o histórico real.
 
-O plano e a visibilidade do repositório precisam permitir GitHub Pages. Como alternativa, qualquer hospedagem estática pode servir o conteúdo de `dist/`.
+1. Antes da atualização, anote o XP e os últimos registros. Após abrir a versão autorizada, confirme os mesmos totais, reflexões, dias e conquistas. Se precisar atualizar, recarregue a página normalmente.
+2. Em **Progresso → Continuar estudando**, complete uma atividade. Toque em **Mais uma atividade** e conclua outra no mesmo dia. Feche/reabra o navegador e confira as duas no histórico e a soma do XP.
+3. Em **Praticar**, combine modalidade, tema e duração; experimente uma combinação sem resultados e “Limpar filtros”. Repita uma atividade já concluída para conferir que uma nova prática é permitida.
+4. Em **Listening**, toque em “Ouvir em inglês”, “Parar áudio” e ouça novamente. Caso não haja voz, abra a transcrição. Em **Configurações do aparelho → Gerenciamento geral → Leitura de texto/Saída de texto para voz** (o nome varia), verifique o mecanismo Samsung/Google e os dados de voz em inglês. Vozes podem carregar com atraso ou exigir download/rede; o sistema pode interromper o áudio ao trocar de aplicativo. A interface não comprova qualidade de pronúncia.
+5. Em **Conversação**, copie o roteiro, abra o ChatGPT, cole/envie e ative voz se disponível. Sem permissão de copiar, selecione e copie o texto manualmente. Volte pelo seletor de abas/aplicativos, confirme que falou e conclua. O miniapp não sabe o que foi dito no ChatGPT.
+6. Recarregue durante uma leitura ou reflexão; na Jornada, toque em **Retomar atividade**. As respostas e o texto digitado devem voltar, sem XP antecipado. Concluir a mesma tentativa em duas abas não deve duplicar o XP.
+7. Confira retrato/paisagem, teclado aberto na reflexão, texto ampliado, TalkBack e navegação de foco. As larguras 320/390/768 px são cobertas por testes no Chromium, mas não substituem a verificação física de áudio e acessibilidade no Samsung.
 
-## Conferência manual no celular
+## Organização
 
-- Abrir uma missão, ouvir o texto e conferir se existe uma voz em inglês no aparelho.
-- Copiar o roteiro (em HTTPS), abrir o ChatGPT, enviar o texto e iniciar a conversa por voz.
-- Voltar ao miniapp, confirmar a prática e concluir; recarregar e conferir o progresso.
-- Testar orientação horizontal, tamanho de texto do sistema e navegação com leitor de tela.
-
-Arquitetura: JavaScript modular + CSS, Vite para desenvolvimento/build e Playwright para testes. Conteúdo em `src/content.js`, regras em `src/progress.js` e interface em `src/main.js`.
+- `src/content.js`: temas e situações iniciais de conversação.
+- `src/activities.js`: catálogo original, modalidades, filtros, trilha, sugestões e roteiros.
+- `src/progress.js`: leitura/gravação retrocompatível, XP e datas locais.
+- `src/views.js`: Jornada, biblioteca e progresso, com escape de dados pessoais.
+- `src/main.js`: navegação, execução/retomada das atividades, áudio e persistência.
+- `src/style.css`: estética original e layouts responsivos.

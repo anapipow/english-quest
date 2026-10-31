@@ -8,7 +8,8 @@
     "build": "vite build --base=./",
     "preview": "vite preview --host 0.0.0.0",
     "test": "node tests/progress.test.js",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:pages": "playwright test --config=playwright.pages.config.js"
   },
   "devDependencies": {
     "vite": "^7.2.2",

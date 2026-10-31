@@ -1,30 +1,61 @@
+export const STORAGE_KEY = "english-quest";
 export const emptyProgress = () => ({ xp: 0, sessions: [], topic: "festival" });
 export function loadProgress(raw) {
+  if (raw === null) return emptyProgress();
+  let data;
   try {
-    const p = JSON.parse(raw);
-    if (!p || !Number.isFinite(p.xp) || p.xp < 0 || !Array.isArray(p.sessions))
-      return emptyProgress();
-    return {
-      ...emptyProgress(),
-      ...p,
-      sessions: p.sessions.filter(
-        (s) =>
-          s &&
-          typeof s.id === "string" &&
-          typeof s.date === "string" &&
-          /^\d{4}-\d{2}-\d{2}$/.test(s.date) &&
-          Number.isFinite(s.xp) &&
-          s.xp >= 0,
-      ),
-    };
+    data = JSON.parse(raw);
   } catch {
-    return emptyProgress();
+    throw new Error(
+      "Os dados salvos não puderam ser lidos. Eles foram mantidos intactos.",
+    );
+  }
+  if (
+    !data ||
+    !Number.isFinite(data.xp) ||
+    data.xp < 0 ||
+    !Array.isArray(data.sessions)
+  ) {
+    throw new Error(
+      "Os dados salvos não puderam ser lidos. Eles foram mantidos intactos.",
+    );
+  }
+  // Preserve the original records, unknown fields and totals: never reconstruct XP
+  // from history or discard a legacy session during an upgrade.
+  return { ...emptyProgress(), ...data };
+}
+export function complete(progress, session) {
+  const duplicate = progress.sessions.some(
+    (s) =>
+      s?.id === session.id &&
+      (session.activityId ? true : s.date === session.date),
+  );
+  if (duplicate) return progress;
+  return {
+    ...progress,
+    xp: progress.xp + session.xp,
+    sessions: [...progress.sessions, session],
+  };
+}
+export function readProgress(storage) {
+  try {
+    return { progress: loadProgress(storage.getItem(STORAGE_KEY)), error: "" };
+  } catch (error) {
+    return {
+      progress: emptyProgress(),
+      error: storage
+        ? "Não foi possível ler os dados salvos. Eles foram mantidos intactos."
+        : "Armazenamento indisponível neste navegador.",
+    };
   }
 }
-export function complete(p, session) {
-  if (p.sessions.some((s) => s.id === session.id && s.date === session.date))
-    return p;
-  return { ...p, xp: p.xp + session.xp, sessions: [...p.sessions, session] };
+export function writeProgress(storage, transform) {
+  // Read immediately before writing, so a stale tab cannot replace newer XP or
+  // history. Refuse to overwrite unreadable existing data or failed storage.
+  const latest = loadProgress(storage.getItem(STORAGE_KEY));
+  const next = transform(latest);
+  storage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return next;
 }
 export const level = (xp) => Math.floor(xp / 100) + 1;
 export function localDate(d = new Date()) {

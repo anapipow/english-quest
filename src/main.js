@@ -1,219 +1,269 @@
 import "./style.css";
-import { topics, voicePrompt } from "./content.js";
-import { loadProgress, complete, level, localDate } from "./progress.js";
-let p;
+import { topics } from "./content.js";
+import {
+  activities,
+  modes,
+  suggestNext,
+  activityPrompt,
+} from "./activities.js";
+import {
+  readProgress,
+  writeProgress,
+  complete,
+  level,
+  localDate,
+} from "./progress.js";
+import {
+  homeView,
+  libraryView,
+  progressView,
+  escapeHTML as e,
+} from "./views.js";
+let storage;
 try {
-  p = loadProgress(localStorage.getItem("english-quest"));
-} catch {
-  p = loadProgress(null);
-}
-if (!topics[p.topic]) p.topic = "festival";
+  storage = window.localStorage;
+} catch {}
+let { progress: p, error: storageError } = readProgress(storage);
 let tab = "today",
-  quick = false,
-  stage = 0,
-  choice = null,
-  spoken = false,
-  notice = "",
-  storageWarning = false;
+  filters = { topic: "all", mode: "all", duration: "all" },
+  attempt = null,
+  toast = "",
+  busy = false,
+  audioPlaying = false;
 const app = document.querySelector("#app");
-function save() {
+// All tabs use the same lock when supported. Reads and writes inside the lock
+// are synchronous; every update starts from the latest stored legacy-compatible data.
+async function update(transform) {
+  const work = () => {
+    p = writeProgress(storage, transform);
+    storageError = "";
+    return p;
+  };
   try {
-    localStorage.setItem("english-quest", JSON.stringify(p));
-  } catch {
-    storageWarning = true;
+    return await (navigator.locks
+      ? navigator.locks.request("english-quest-progress", work)
+      : work());
+  } catch (error) {
+    storageError = error.message || "Não foi possível salvar neste navegador.";
+    throw error;
   }
 }
-const icons = { today: "⌂", practice: "◌", progress: "▥" };
-function render() {
-  const t = topics[p.topic],
-    today = localDate(),
-    done = p.sessions.filter((s) => s.date === today).length;
-  app.innerHTML = `<aside class="sidebar"><a class="brand" href="#" aria-label="English Quest início"><span class="brand-icon">eq<span>✦</span></span><span>english<span class="brand-light">quest</span></span></a><div class="side-label">SEU ESPAÇO DE PRÁTICA</div><nav>${[
-    ["today", "Minha jornada"],
-    ["practice", "Explorar temas"],
-    ["progress", "Meu progresso"],
-  ]
-    .map(
-      ([id, label]) =>
-        `<button data-tab="${id}" class="nav-button ${tab === id ? "active" : ""}"><span>${icons[id]}</span>${label}</button>`,
-    )
-    .join(
-      "",
-    )}</nav><div class="side-note"><span>✧</span><strong>Pequenos passos.<br>Conversas maiores.</strong><p>A constância cresce com gentileza. Volte quando puder.</p></div><div class="profile"><span class="avatar">EU</span><div>Seu espaço pessoal<small>Aprendendo no seu ritmo</small></div></div></aside><main><header><span class="eyebrow">UM POUCO, TODOS OS DIAS</span><span class="level-pill">✦ Nível ${level(p.xp)} <span>· ${p.xp} XP</span></span></header>${
-    tab === "today"
-      ? `<section class="intro"><div class="eyebrow green">LET’S MAKE IT HAPPEN</div><h1>Sua próxima conversa<br>começa <em>aqui.</em></h1><p>Inglês para viver histórias, conhecer pessoas e abrir caminhos.</p></section><div class="dashboard"><div><section class="hero"><div class="hero-top"><span class="tag">✦ MISSÃO DO DIA</span><span>${quick ? "5" : "15"} MIN · CONVERSAÇÃO</span></div><div class="hero-art" aria-hidden="true"><span class="orbit"></span><span class="speech">Hello,<br><i>new world.</i><b>✦</b></span><span class="art-star">✧</span></div><div class="hero-content"><div class="hero-category">${t.icon} ${t.name}</div><h2>${t.title}</h2><p>Uma situação real. Algumas palavras novas.<br>E mais confiança para falar.</p><button class="button cream" id="start">${done ? "Praticar mais" : "Começar minha missão"} <span>→</span></button><div class="hero-foot">◷ No seu ritmo <span>+${quick ? 20 : 40} XP ao concluir</span></div></div></section><button class="quick-card" id="quick"><span class="quick-icon">ϟ</span><span><strong>Só tenho 5 minutinhos</strong><small>Uma conversa curta também conta.</small></span><span class="arrow">→</span></button><section class="themes"><div class="section-heading"><h2>Inglês para o seu mundo</h2><button data-tab="practice" class="text-button">Ver todos →</button></div><div class="theme-grid">${Object.entries(
-          topics,
-        )
-          .slice(0, 3)
-          .map(([id, x]) => themeCard(id, x))
-          .join(
-            "",
-          )}</div></section></div><div class="right-column"><section class="progress-card"><div class="section-heading"><h2>Sua jornada</h2><span>✧</span></div><div class="xp-ring"><div><strong>${p.xp}</strong><span>XP CONQUISTADOS</span></div></div><div class="level-row"><strong>Nível ${level(p.xp)} · ${level(p.xp) === 1 ? "Primeiros passos" : "Novos horizontes"}</strong><span>${p.xp % 100}/100</span></div><div class="bar"><i style="width:${p.xp % 100}%"></i></div><p>Mais ${100 - (p.xp % 100)} XP para o próximo nível.<br>Cada conversa te leva um pouco além.</p><div class="week">${weekView()}</div><div class="gentle">♡ Sem pressão, sem perder progresso.</div></section><section class="voice-card"><span class="voice-icon">≋</span><span class="eyebrow">MENOS MEDO. MAIS VOZ.</span><h2>Seu inglês precisa<br>de espaço para sair.</h2><p>Pratique com o ChatGPT por voz. Erre, tente de novo e descubra seu jeito de falar.</p><button id="voice-help" class="text-button">Como funciona →</button></section></div></div>`
-      : tab === "practice"
-        ? `<section class="intro"><div class="eyebrow green">CONVERSAS COM PROPÓSITO</div><h1>O seu mundo,<br><em>em inglês.</em></h1><p>Escolha um tema para sua próxima missão.</p></section><div class="explore-grid">${Object.entries(
-            topics,
-          )
-            .map(([id, x]) => themeCard(id, x))
-            .join("")}</div>`
-        : `<section class="intro"><div class="eyebrow green">CADA TENTATIVA CONTA</div><h1>Veja o quanto<br>você <em>já caminhou.</em></h1><p>Seu progresso fica com você, mesmo quando a rotina muda.</p></section><div class="stats"><div><strong>${p.xp}</strong> XP conquistados</div><div><strong>${p.sessions.length}</strong> conversas praticadas</div><div><strong>${new Set(p.sessions.map((s) => s.date)).size}</strong> dias de prática</div></div><h2 class="subheading">Suas conquistas</h2><div class="achievement-grid">${[
-            [
-              p.sessions.length >= 1,
-              "✦",
-              "Primeira conversa",
-              "Complete sua primeira missão.",
-            ],
-            [
-              p.sessions.length >= 5,
-              "◈",
-              "Voz em movimento",
-              "Complete 5 missões.",
-            ],
-            [
-              new Set(p.sessions.map((s) => s.topic)).size >= 3,
-              "◎",
-              "Sem fronteiras",
-              "Pratique em 3 temas diferentes.",
-            ],
-          ]
-            .map(
-              ([yes, icon, title, desc]) =>
-                `<article class="achievement ${yes ? "earned" : ""}"><span>${icon}</span><h3>${title}</h3><p>${desc}</p><small>${yes ? "Conquistada" : "Um passo de cada vez"}</small></article>`,
-            )
-            .join("")}</div><h2 class="subheading">Últimas práticas</h2>${
-            p.sessions.length
-              ? `<ul class="history">${p.sessions
-                  .slice(-10)
-                  .reverse()
-                  .map(
-                    (s) =>
-                      `<li><span>${topics[s.topic]?.name || "Prática"} <small>${s.date.split("-").reverse().join("/")}${s.quick ? " · 5 minutos" : ""}</small></span><strong>+${s.xp} XP</strong></li>`,
-                  )
-                  .join("")}</ul>`
-              : '<p class="muted">Sua história começa na primeira conversa. Vamos nessa?</p>'
-          }`
-  }<footer>Feito para ir além do “I understand, but I can’t speak”. <span>Uma conversa de cada vez. ✦</span><small>Progresso salvo apenas neste navegador. Limpar os dados do navegador apaga seu histórico.</small></footer>${storageWarning ? '<p role="alert">Não foi possível salvar neste navegador. Seu progresso pode se perder ao sair.</p>' : ""}</main><nav class="mobile-nav" aria-label="Navegação principal">${[
-    ["today", "Jornada"],
-    ["practice", "Temas"],
-    ["progress", "Progresso"],
-  ]
-    .map(
-      ([id, name]) =>
-        `<button data-tab="${id}" class="${tab === id ? "active" : ""}"><span>${icons[id]}</span>${name}</button>`,
-    )
-    .join("")}</nav><dialog id="mission"></dialog><dialog id="help"></dialog>`;
-  app.querySelectorAll(".history li > span").forEach((el, i) => {
-    const reflection = p.sessions.slice(-10).reverse()[i]?.reflection;
-    if (typeof reflection === "string" && reflection) {
-      const details = document.createElement("details");
-      const summary = document.createElement("summary");
-      summary.textContent = "Minha reflexão";
-      const text = document.createElement("p");
-      text.textContent = reflection;
-      details.append(summary, text);
-      el.append(details);
-    }
-  });
-  app.querySelectorAll("[data-tab]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        tab = b.dataset.tab;
-        render();
-        window.scrollTo(0, 0);
-      }),
-  );
-  app.querySelector(".brand").onclick = (e) => {
-    e.preventDefault();
-    tab = "today";
-    render();
+const validAttempt = (x) =>
+  x &&
+  typeof x.id === "string" &&
+  activities.some((a) => a.id === x.activityId) &&
+  [0, 1, 2].includes(x.phase) &&
+  Array.isArray(x.answers);
+function render(focusHeading = false) {
+  const nav = [
+    ["today", "Jornada", "⌂"],
+    ["practice", "Praticar", "◌"],
+    ["progress", "Progresso", "▥"],
+  ];
+  app.innerHTML = `<aside class="sidebar"><a class="brand" href="#" aria-label="English Quest início"><span class="brand-icon">eq<span>✦</span></span><span>english<span class="brand-light">quest</span></span></a><div class="side-label">SEU ESPAÇO DE PRÁTICA</div><nav>${nav.map(([id, label, icon]) => `<button data-tab="${id}" class="nav-button ${tab === id ? "active" : ""}" ${tab === id ? 'aria-current="page"' : ""}><span aria-hidden="true">${icon}</span>${label}</button>`).join("")}</nav><div class="side-note"><span>✧</span><strong>Pequenos passos.<br>Conversas maiores.</strong><p>A constância cresce com gentileza. Volte quando puder.</p></div><div class="profile"><span class="avatar">EU</span><div>Seu espaço pessoal<small>Aprendendo no seu ritmo</small></div></div></aside><main><header><span class="eyebrow">UM POUCO, TODOS OS DIAS</span><span class="level-pill">✦ Nível ${level(p.xp)} <span>· ${p.xp} XP</span></span></header>${toast ? `<p class="toast" role="status">${e(toast)}</p>` : ""}${storageError ? `<p class="storage-error" role="alert">${e(storageError)} Não apagamos seus dados. Novas práticas só serão registradas quando for possível salvar.</p>` : ""}${tab === "today" ? homeView(p) : tab === "practice" ? libraryView(filters) : progressView(p)}<footer>Feito para ir além do “I understand, but I can’t speak”. <span>Uma conversa de cada vez. ✦</span><small>Progresso salvo apenas neste navegador. Limpar os dados do navegador apaga seu histórico.</small></footer></main><nav class="mobile-nav" aria-label="Navegação principal">${nav.map(([id, label, icon]) => `<button data-tab="${id}" class="${tab === id ? "active" : ""}" ${tab === id ? 'aria-current="page"' : ""}><span aria-hidden="true">${icon}</span>${label}</button>`).join("")}</nav><dialog id="mission" aria-labelledby="mission-title"></dialog><dialog id="help" aria-labelledby="help-title"></dialog>`;
+  app
+    .querySelectorAll("[data-tab]")
+    .forEach((b) => (b.onclick = () => navigate(b.dataset.tab)));
+  app.querySelector(".brand").onclick = (event) => {
+    event.preventDefault();
+    navigate("today");
   };
+  app
+    .querySelectorAll("[data-activity]")
+    .forEach((b) => (b.onclick = () => openActivity(b.dataset.activity)));
   app.querySelectorAll("[data-topic]").forEach(
     (b) =>
-      (b.onclick = () => {
-        p.topic = b.dataset.topic;
-        save();
-        tab = "today";
-        quick = false;
-        render();
-        window.scrollTo(0, 0);
+      (b.onclick = async () => {
+        try {
+          await update((latest) => ({ ...latest, topic: b.dataset.topic }));
+          render();
+        } catch {
+          render();
+        }
       }),
   );
   app
-    .querySelector("#start")
-    ?.addEventListener("click", () => openMission(false));
-  app
-    .querySelector("#quick")
-    ?.addEventListener("click", () => openMission(true));
-  app.querySelector("#voice-help")?.addEventListener("click", () => {
-    const d = document.querySelector("#help");
-    d.innerHTML = `<button class="close" aria-label="Fechar">×</button><span class="eyebrow green">SUA PARCERIA DE CONVERSAÇÃO</span><h2>Do miniapp para a conversa.</h2><p>1. Inicie uma missão e copie o roteiro preparado para você.</p><p>2. Abra o ChatGPT, cole e envie o roteiro. Depois, ative o modo de voz disponível na sua conta.</p><p>3. Converse em voz alta e volte aqui para registrar sua prática.</p><p class="muted">O English Quest não acessa seu microfone nem avalia sua fala. A prática acontece separadamente no ChatGPT e depende da disponibilidade do modo de voz.</p><a class="button" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Abrir ChatGPT →</a>`;
-    d.querySelector(".close").onclick = () => d.close();
-    d.showModal();
+    .querySelector("#continue")
+    ?.addEventListener("click", () => openActivity(suggestNext(p).id));
+  app.querySelector("#resume")?.addEventListener("click", () => {
+    if (validAttempt(p.activeAttempt)) openActivity(p.activeAttempt.activityId);
+    else {
+      toast =
+        "Esta prática não está disponível nesta versão. Seus dados foram mantidos.";
+      render();
+    }
+  });
+  for (const key of ["mode", "topic", "duration"])
+    app.querySelector(`#filter-${key}`)?.addEventListener("change", (event) => {
+      filters[key] = event.target.value;
+      render();
+      app.querySelector(`#filter-${key}`).focus();
+    });
+  app.querySelector("#reset-filters")?.addEventListener("click", () => {
+    filters = { topic: "all", mode: "all", duration: "all" };
+    render();
+  });
+  app.querySelector("#voice-help")?.addEventListener("click", showHelp);
+  if (focusHeading) {
+    const heading = app.querySelector("h1");
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+  }
+}
+function navigate(next) {
+  stopAudio();
+  tab = next;
+  toast = "";
+  render(true);
+  window.scrollTo(0, 0);
+}
+async function openActivity(id) {
+  if (busy) return;
+  busy = true;
+  stopAudio();
+  try {
+    await update((latest) => {
+      const drafts = { ...latest.practiceDrafts };
+      if (
+        validAttempt(latest.activeAttempt) &&
+        latest.activeAttempt.activityId !== id
+      )
+        drafts[latest.activeAttempt.activityId] = latest.activeAttempt;
+      const draft =
+        latest.activeAttempt?.activityId === id
+          ? latest.activeAttempt
+          : drafts[id];
+      const next =
+        validAttempt(draft) && !latest.sessions.some((s) => s?.id === draft.id)
+          ? draft
+          : {
+              id:
+                crypto.randomUUID?.() ||
+                Array.from(crypto.getRandomValues(new Uint32Array(4)), (n) =>
+                  n.toString(16).padStart(8, "0"),
+                ).join(""),
+              activityId: id,
+              phase: 0,
+              answers: [],
+              spoken: false,
+              reflection: "",
+              startedAt: new Date().toISOString(),
+            };
+      attempt = next;
+      delete drafts[id];
+      return { ...latest, activeAttempt: next, practiceDrafts: drafts };
+    });
+    missionView();
+    document.querySelector("#mission").showModal();
+  } catch {
+    render();
+  } finally {
+    busy = false;
+  }
+}
+async function patchAttempt(patch) {
+  const id = attempt.id;
+  await update((latest) => {
+    if (latest.sessions.some((s) => s?.id === id))
+      throw new Error(
+        "Esta prática já foi registrada. Feche e escolha uma nova atividade.",
+      );
+    if (latest.activeAttempt?.id !== id)
+      throw new Error(
+        "Outra atividade foi aberta em outra aba. Feche e retome pela Jornada.",
+      );
+    attempt = { ...latest.activeAttempt, ...patch };
+    return { ...latest, activeAttempt: attempt };
   });
 }
-function themeCard(id, t) {
-  return `<button class="theme-card ${p.topic === id ? "selected" : ""}" data-topic="${id}"><span class="theme-icon">${t.icon}</span><strong>${t.name}</strong><small>${p.topic === id ? "Tema selecionado" : "Explorar conversa"} →</small></button>`;
+function stopAudio() {
+  audioPlaying = false;
+  window.speechSynthesis?.cancel();
+  const button = document.querySelector("#listen");
+  if (button) button.disabled = false;
 }
-function weekView() {
-  const now = new Date();
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(now);
-    d.setDate(now.getDate() - 6 + i);
-    const yes = p.sessions.some((s) => s.date === localDate(d));
-    return `<div class="day ${yes ? "done" : ""} ${i === 6 ? "current" : ""}"><span>${["D", "S", "T", "Q", "Q", "S", "S"][d.getDay()]}</span><b>${yes ? "✓" : d.getDate()}</b></div>`;
-  }).join("");
+function showHelp() {
+  const d = document.querySelector("#help");
+  d.innerHTML =
+    '<button class="close" aria-label="Fechar">×</button><span class="eyebrow green">SUA PARCERIA DE CONVERSAÇÃO</span><h2 id="help-title">Do miniapp para a conversa.</h2><p>1. Abra uma atividade de Conversação e copie o roteiro.</p><p>2. Abra o ChatGPT, cole e envie o roteiro. Ative o modo de voz disponível na sua conta.</p><p>3. Converse em voz alta. Depois volte aqui e registre sua prática.</p><p class="muted">O English Quest não acessa seu microfone nem avalia sua fala. A conversa acontece separadamente no ChatGPT e depende dos limites e da disponibilidade do modo de voz. Listening usa a voz do dispositivo; pode exigir uma voz em inglês instalada.</p><a class="button" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Abrir ChatGPT →</a>';
+  d.querySelector(".close").onclick = () => d.close();
+  d.showModal();
 }
-function openMission(isQuick) {
-  quick = isQuick;
-  stage = 0;
-  choice = null;
-  spoken = false;
-  notice = "";
-  missionView();
-  document.querySelector("#mission").showModal();
-}
-function missionView() {
-  const d = document.querySelector("#mission"),
-    t = topics[p.topic];
-  d.innerHTML = `<button class="close" aria-label="Fechar missão">×</button><span class="eyebrow green">${quick ? "MODO 5 MINUTOS" : "MISSÃO DO DIA"} · ${t.name}</span><div class="steps"><span class="${stage === 0 ? "on" : ""}">1 Preparar</span><span class="${stage === 1 ? "on" : ""}">2 Conversar</span><span class="${stage === 2 ? "on" : ""}">3 Registrar</span></div>${stage === 0 ? `<h2>${t.title}</h2><p class="muted">${quick ? "1 minuto para se preparar, 3 para conversar e 1 para refletir." : "Leia, escute e leve estas expressões para uma conversa de verdade."}</p><div class="reading" lang="en"><p>${t.text}</p><button class="text-button" id="listen">▷ Ouvir em inglês</button><p id="audio-status" role="status"></p></div><h3>${t.question}</h3><div class="answers">${t.options.map((x, i) => `<button data-answer="${i}" class="${choice === i ? "chosen" : ""}">${x}</button>`).join("")}</div>${choice !== null ? `<p role="status" class="feedback">${choice === t.answer ? "✓ Isso mesmo!" : "Quase! Releia ou escute mais uma vez."}</p>` : ""}<button class="button" id="next" ${choice !== t.answer ? "disabled" : ""}>Preparar minha conversa →</button>` : stage === 1 ? `<h2>Agora é a sua voz.</h2><p>Copie o roteiro, envie no ChatGPT e ative o modo de voz. ${quick ? "Converse por cerca de 3 minutos." : "Tente conversar por cerca de 7 minutos."}</p><details><summary>Expressões para destravar</summary><ul lang="en">${t.lines.map((l) => `<li>${l}</li>`).join("")}</ul></details><label class="prompt-label" for="prompt">Seu roteiro de conversação</label><textarea id="prompt" readonly>${voicePrompt(t, quick)}</textarea><button class="button" id="copy">Copiar roteiro</button><p id="copy-status" role="status"></p><a class="button outline" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Abrir ChatGPT →</a><p class="muted small">A conversa acontece no ChatGPT. Volte a esta aba quando terminar. O miniapp não grava nem avalia sua voz.</p><button class="text-button" id="next">Já voltei da conversa →</button>` : `<h2>Uma conversa a mais.<br>Um pouco mais de confiança.</h2><p>Não precisa ter sido perfeito. O importante é ter tentado falar.</p><label class="check"><input id="spoken" type="checkbox" ${spoken ? "checked" : ""}> Pratiquei falando em voz alta.</label><label class="prompt-label" for="reflection">Como foi? O que quer praticar de novo? <span>(opcional)</span></label><textarea id="reflection" placeholder="Uma expressão nova, uma pequena vitória…" maxlength="500"></textarea><p class="muted small">Sua reflexão fica apenas neste navegador.</p><button class="button" id="finish" ${spoken ? "" : "disabled"}>Concluir prática · +${quick ? 20 : 40} XP</button>`}<p role="status">${notice}</p>`;
-  d.querySelector(".close").onclick = () => {
-    window.speechSynthesis?.cancel();
-    d.close();
+function missionView(focus = false) {
+  const a = activities.find((x) => x.id === attempt.activityId),
+    d = document.querySelector("#mission"),
+    isVoice = a.mode === "conversation",
+    phase = attempt.phase;
+  const questions = a.questions || [],
+    correct = questions.every((q, i) => attempt.answers[i] === q.answer);
+  const heading =
+    phase === 0
+      ? a.title
+      : phase === 1
+        ? "Agora é a sua voz."
+        : "Uma prática a mais. Um pouco mais de confiança.";
+  d.innerHTML = `<button class="close" aria-label="Fechar atividade">×</button><span class="eyebrow green">${modes[a.mode].name} · ${topics[a.topic].name}</span><div class="steps"><span class="${phase === 0 ? "on" : ""}">1 ${isVoice ? "Preparar" : "Praticar"}</span>${isVoice ? `<span class="${phase === 1 ? "on" : ""}">2 Conversar</span>` : ""}<span class="${phase === 2 ? "on" : ""}">${isVoice ? 3 : 2} Registrar</span></div><h2 id="mission-title" tabindex="-1">${heading}</h2><p class="muted small">A2–B1 · ${a.minutes} min estimados · +${a.xp} XP ao concluir</p>${phase === 0 ? (isVoice ? `<p>Imagine esta situação. Leia as expressões abaixo e experimente dizê-las em voz alta.</p><div class="reading" lang="en"><p>${a.situation}</p><ul>${a.lines.map((l) => `<li>${l}</li>`).join("")}</ul></div><p class="muted small">${a.minutes === 5 ? "1 minuto para preparar, 3 para conversar e 1 para refletir." : "Reserve cerca de 7 minutos para a conversa. O restante é para preparar e refletir."}</p><button class="button" id="next">Preparar minha conversa →</button>` : `${a.mode === "listening" ? `<p>Escute a mensagem e responda às perguntas. Pode ouvir quantas vezes quiser.</p><div class="audio-controls"><button class="button" id="listen">Ouvir em inglês</button><button class="text-button" id="stop-audio">Parar áudio</button></div><p id="audio-status" role="status"></p><p class="muted small">Áudio sintetizado pelo dispositivo, não uma gravação humana. Sem áudio? Use a transcrição para continuar.</p><details class="transcript" ${attempt.transcriptOpen ? "open" : ""}><summary>Mostrar transcrição</summary><p lang="en">${a.text}</p></details>` : a.mode === "reading" ? `<div class="reading" lang="en"><p>${a.text}</p></div>` : "<p>Escolha a frase que melhor funciona nesta situação. O feedback explica o porquê.</p>"}<div class="questions">${questions.map((q, qi) => `<section class="question" aria-labelledby="question-${qi}"><h3 id="question-${qi}">${qi + 1}. ${q.question}</h3><div class="answers">${q.options.map((option, i) => `<button data-question="${qi}" data-answer="${i}" aria-pressed="${attempt.answers[qi] === i}" class="${attempt.answers[qi] === i ? "chosen" : ""}">${option}</button>`).join("")}</div>${Number.isInteger(attempt.answers[qi]) ? `<p class="feedback" role="status">${attempt.answers[qi] === q.answer ? "✓ Isso mesmo! " + q.explanation : "Tente mais uma vez. " + (a.mode === "challenge" ? q.explanation : "Procure no texto a informação desta pergunta.")}</p>` : ""}</section>`).join("")}</div><button class="button" id="next" ${correct ? "" : "disabled"}>Registrar atividade →</button>`) : phase === 1 ? `<p>Copie o roteiro, envie no ChatGPT e ative o modo de voz. Converse por cerca de ${a.minutes === 5 ? 3 : 7} minutos, sem pressa.</p><label class="prompt-label" for="prompt">Seu roteiro de conversação</label><textarea id="prompt" lang="en" readonly>${activityPrompt(a)}</textarea><button class="button" id="copy">Copiar roteiro</button><p id="copy-status" role="status"></p><a class="button outline" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Abrir ChatGPT →</a><p class="muted small">Volte a esta aba quando terminar. O miniapp não grava nem avalia sua voz. Se o modo de voz estiver indisponível, você pode praticar falando as respostas em voz alta.</p><button class="text-button" id="next">Já voltei da conversa →</button>` : `<p>${isVoice ? "Não precisa ter sido perfeito. O importante é ter tentado falar." : "Você concluiu as perguntas. Leve uma expressão nova para a próxima conversa."}</p>${isVoice ? `<label class="check"><input id="spoken" type="checkbox" ${attempt.spoken ? "checked" : ""}> Pratiquei falando em voz alta.</label>` : ""}<label class="prompt-label" for="reflection">Como foi? O que quer praticar de novo? <span>(opcional)</span></label><textarea id="reflection" maxlength="500" placeholder="Uma expressão nova, uma pequena vitória…">${e(attempt.reflection || "")}</textarea><p class="muted small">Sua reflexão fica apenas neste navegador.</p><button class="button" id="finish" ${isVoice && !attempt.spoken ? "disabled" : ""}>Concluir prática · +${a.xp} XP</button>`}<p id="mission-error" role="alert"></p>`;
+  const safe = (fn) => async (event) => {
+    try {
+      await fn(event);
+    } catch {
+      if (d.querySelector("#mission-error"))
+        d.querySelector("#mission-error").textContent =
+          `${storageError} Seus dados anteriores foram mantidos. Tente novamente antes de sair.`;
+    }
   };
-  d.oncancel = () => window.speechSynthesis?.cancel();
+  d.querySelector(".close").onclick = () => {
+    stopAudio();
+    d.close();
+    render();
+  };
+  d.oncancel = () => {
+    stopAudio();
+    setTimeout(() => render(), 0);
+  };
   d.querySelectorAll("[data-answer]").forEach(
     (b) =>
-      (b.onclick = () => {
-        choice = Number(b.dataset.answer);
-        window.speechSynthesis?.cancel();
-        missionView();
-      }),
+      (b.onclick = safe(async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const answers = [...attempt.answers];
+          answers[Number(b.dataset.question)] = Number(b.dataset.answer);
+          await patchAttempt({ answers });
+          missionView();
+          d.querySelector(
+            `[data-question="${b.dataset.question}"][data-answer="${b.dataset.answer}"]`,
+          ).focus();
+        } finally {
+          busy = false;
+        }
+      })),
   );
-  d.querySelector("#listen")?.addEventListener("click", () => {
-    const s = d.querySelector("#audio-status");
-    if (!("speechSynthesis" in window)) {
-      s.textContent =
-        "Áudio indisponível neste navegador. Você pode ler o texto e praticá-lo no ChatGPT.";
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(t.text);
-    u.lang = "en-US";
-    u.rate = 0.85;
-    u.onerror = () =>
-      (s.textContent =
-        "Não foi possível reproduzir o áudio. Tente uma voz em inglês nas configurações do aparelho ou leia o texto.");
-    s.textContent = "Reproduzindo com a voz do seu dispositivo…";
-    u.onend = () => (s.textContent = "Áudio concluído.");
-    window.speechSynthesis.speak(u);
-  });
-  d.querySelector("#next")?.addEventListener("click", () => {
-    window.speechSynthesis?.cancel();
-    stage++;
-    missionView();
-  });
+  d.querySelector(".transcript")?.addEventListener(
+    "toggle",
+    safe(async (event) => {
+      if (attempt.transcriptOpen !== event.target.open)
+        await patchAttempt({ transcriptOpen: event.target.open });
+    }),
+  );
+  d.querySelector("#next")?.addEventListener(
+    "click",
+    safe(async () => {
+      if (busy) return;
+      if (!isVoice && !correct) return;
+      busy = true;
+      try {
+        stopAudio();
+        await patchAttempt({ phase: phase === 0 && isVoice ? 1 : 2 });
+        missionView(true);
+      } finally {
+        busy = false;
+      }
+    }),
+  );
   d.querySelector("#copy")?.addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText(voicePrompt(t, quick));
+      await navigator.clipboard.writeText(activityPrompt(a));
       d.querySelector("#copy-status").textContent =
         "Roteiro copiado. Cole e envie no ChatGPT.";
     } catch {
@@ -222,36 +272,148 @@ function missionView() {
         "Selecione e copie o roteiro acima manualmente.";
     }
   });
-  d.querySelector("#spoken")?.addEventListener("change", (e) => {
-    spoken = e.target.checked;
-    d.querySelector("#finish").disabled = !spoken;
+  d.querySelector("#spoken")?.addEventListener(
+    "change",
+    safe(async (event) => {
+      const checked = event.target.checked;
+      d.querySelector("#finish").disabled = true;
+      await patchAttempt({ spoken: checked });
+      d.querySelector("#finish").disabled = !attempt.spoken;
+    }),
+  );
+  d.querySelector("#reflection")?.addEventListener(
+    "input",
+    safe(async (event) => {
+      await patchAttempt({ reflection: event.target.value });
+    }),
+  );
+  d.querySelector("#finish")?.addEventListener(
+    "click",
+    safe(() => finishActivity(a)),
+  );
+  d.querySelector("#listen")?.addEventListener("click", () => playAudio(a, d));
+  d.querySelector("#stop-audio")?.addEventListener("click", () => {
+    stopAudio();
+    d.querySelector("#audio-status").textContent =
+      "Áudio parado. Você pode ouvir novamente.";
   });
-  d.querySelector("#finish")?.addEventListener("click", () => {
-    if (!spoken) return;
-    const date = localDate(),
-      id = `${p.topic}-${quick ? "quick" : "full"}`,
-      existing = p.sessions.some((s) => s.id === id && s.date === date);
-    const reflection = d.querySelector("#reflection").value;
-    p = complete(p, {
-      id,
-      date,
-      topic: p.topic,
-      quick,
-      xp: quick ? 20 : 40,
-      reflection,
-    });
-    save();
-    d.close();
-    tab = "progress";
-    render();
-    const msg = document.createElement("p");
-    msg.className = "toast";
-    msg.role = "status";
-    msg.textContent = existing
-      ? "Prática concluída! O XP desta missão já foi registrado hoje."
-      : `Prática registrada! +${quick ? 20 : 40} XP. Sua voz está ganhando espaço.`;
-    document.querySelector("main").prepend(msg);
-    window.scrollTo(0, 0);
-  });
+  if (focus) d.querySelector("#mission-title").focus();
 }
+function playAudio(a, d) {
+  const status = d.querySelector("#audio-status");
+  if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+    status.textContent =
+      "Áudio indisponível neste navegador. Abra a transcrição para continuar.";
+    return;
+  }
+  stopAudio();
+  audioPlaying = true;
+  const utterance = new SpeechSynthesisUtterance(a.text);
+  utterance.lang = "en-US";
+  utterance.rate = 0.85;
+  const voices = window.speechSynthesis.getVoices();
+  const voice = voices.find((v) => /^en[-_]/i.test(v.lang));
+  if (voice) utterance.voice = voice;
+  const button = d.querySelector("#listen");
+  button.disabled = true;
+  status.textContent = "Reproduzindo com a voz do dispositivo…";
+  const ended = (message) => {
+    if (!audioPlaying) return;
+    audioPlaying = false;
+    button.disabled = false;
+    status.textContent = message;
+  };
+  utterance.onend = () => ended("Áudio concluído. Pode ouvir novamente.");
+  utterance.onerror = () =>
+    ended(
+      "Não foi possível reproduzir. Verifique a voz em inglês do aparelho ou abra a transcrição.",
+    );
+  try {
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    ended("Não foi possível reproduzir. Abra a transcrição para continuar.");
+  }
+  // A new click after stopping should always be possible, even if cancellation
+  // does not emit an end event on the Android speech engine.
+  d.querySelector("#stop-audio").onclick = () => {
+    stopAudio();
+    button.disabled = false;
+    status.textContent = "Áudio parado. Você pode ouvir novamente.";
+  };
+}
+async function finishActivity(a) {
+  if (busy || attempt.phase !== 2) return;
+  if (a.mode === "conversation" && !attempt.spoken) return;
+  if (
+    a.questions &&
+    !a.questions.every((q, i) => attempt.answers[i] === q.answer)
+  )
+    return;
+  busy = true;
+  const finished = attempt;
+  let awarded = false;
+  const reflection = document.querySelector("#reflection").value;
+  document.querySelector("#finish").disabled = true;
+  try {
+    await update((latest) => {
+      const already = latest.sessions.some((s) => s?.id === finished.id);
+      if (already) return latest;
+      if (latest.activeAttempt?.id !== finished.id)
+        throw new Error(
+          "Esta atividade mudou em outra aba. Retome pela Jornada.",
+        );
+      awarded = true;
+      const next = complete(latest, {
+        id: finished.id,
+        activityId: a.id,
+        date: localDate(),
+        topic: a.topic,
+        mode: a.mode,
+        minutes: a.minutes,
+        quick: a.minutes === 5,
+        xp: a.xp,
+        reflection,
+      });
+      return { ...next, activeAttempt: null };
+    });
+    stopAudio();
+    attempt = null;
+    tab = "progress";
+    toast = awarded
+      ? `Prática registrada! Seu progresso está salvo. +${a.xp} XP por esta atividade.`
+      : "Esta prática já foi registrada em outra aba. Seu XP foi mantido, sem duplicação.";
+    render(true);
+    window.scrollTo(0, 0);
+    showCompletion(a, awarded);
+  } finally {
+    busy = false;
+    document.querySelector("#finish")?.removeAttribute("disabled");
+  }
+}
+function showCompletion(a, awarded = true) {
+  const d = document.querySelector("#mission");
+  d.innerHTML = `<button class="close" aria-label="Fechar conclusão">×</button><span class="eyebrow green">CADA PRÁTICA CONTA</span><h2 id="mission-title">Você deu mais um passo.</h2><p>${awarded ? `+${a.xp} XP registrados.` : "Prática já registrada. Nenhum XP duplicado."} Quer continuar ou deixar a próxima para outro dia?</p><button class="button" id="more">Mais uma atividade →</button><button class="button outline" id="choose">Escolher outra</button><button class="text-button" id="see-progress">Ver meu progresso</button>`;
+  d.querySelector(".close").onclick = d.querySelector("#see-progress").onclick =
+    () => {
+      d.close();
+      app.querySelector("#continue").focus();
+    };
+  d.querySelector("#more").onclick = () => {
+    d.close();
+    openActivity(suggestNext(p, a.id).id);
+  };
+  d.querySelector("#choose").onclick = () => {
+    d.close();
+    navigate("practice");
+  };
+  d.showModal();
+}
+window.addEventListener("storage", (event) => {
+  if (event.key !== "english-quest") return;
+  const snapshot = readProgress(storage);
+  p = snapshot.progress;
+  storageError = snapshot.error;
+  if (!document.querySelector("#mission")?.open) render();
+});
+window.addEventListener("pagehide", stopAudio);
 render();

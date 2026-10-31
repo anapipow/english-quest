@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "*.spec.js",
+  testMatch: "app.spec.js",
   use: {
     baseURL: "http://127.0.0.1:5173",
     viewport: { width: 390, height: 844 },
