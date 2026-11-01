@@ -460,32 +460,6 @@ export function filterActivities({
         }[duration]),
   );
 }
-export function dailyTrail(topic, date) {
-  const pool = activities.filter((a) => a.topic === topic);
-  const day = (Number(date.replaceAll("-", "")) % 2) + 1;
-  return ["challenge", "reading", "conversation"].map((mode) =>
-    pool.find(
-      (a) =>
-        a.mode === mode &&
-        (mode === "reading"
-          ? a.id.endsWith(String(day))
-          : mode === "conversation"
-            ? a.minutes === 5
-            : true),
-    ),
-  );
-}
-export function suggestNext(progress, previousId = null) {
-  const last = previousId || progress.sessions.at(-1)?.activityId;
-  const candidates = activities.filter(
-    (a) => a.topic === progress.topic && a.id !== last,
-  );
-  const counts = (a) =>
-    progress.sessions.filter((s) => s.activityId === a.id).length;
-  return [...(candidates.length ? candidates : activities)].sort(
-    (a, b) => counts(a) - counts(b),
-  )[0];
-}
 export function activityPrompt(activity) {
   return `Act as ${activity.role}. Help me practice spoken English at A2–B1 level. Situation: ${activity.situation} Keep this practice to about ${activity.minutes === 5 ? 3 : 7} minutes. Ask one question at a time and wait for my spoken answer. If I get stuck, offer a simple hint. Encourage follow-up questions. At the end, give me two useful corrections, one strength and three expressions to practice. Start by greeting me in character.`;
 }

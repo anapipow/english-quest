@@ -54,7 +54,7 @@ export function writeProgress(storage, transform) {
   // history. Refuse to overwrite unreadable existing data or failed storage.
   const latest = loadProgress(storage.getItem(STORAGE_KEY));
   const next = transform(latest);
-  storage.setItem(STORAGE_KEY, JSON.stringify(next));
+  if (next !== latest) storage.setItem(STORAGE_KEY, JSON.stringify(next));
   return next;
 }
 export const level = (xp) => Math.floor(xp / 100) + 1;

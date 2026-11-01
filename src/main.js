@@ -1,11 +1,7 @@
+import { ensureDailyPlan, nextActivity } from "./study-plan.js";
 import "./style.css";
 import { topics } from "./content.js";
-import {
-  activities,
-  modes,
-  suggestNext,
-  activityPrompt,
-} from "./activities.js";
+import { activities, modes, activityPrompt } from "./activities.js";
 import {
   readProgress,
   writeProgress,
@@ -35,7 +31,7 @@ const app = document.querySelector("#app");
 // are synchronous; every update starts from the latest stored legacy-compatible data.
 async function update(transform) {
   const work = () => {
-    p = writeProgress(storage, transform);
+    p = writeProgress(storage, (latest) => ensureDailyPlan(transform(latest)));
     storageError = "";
     return p;
   };
@@ -84,7 +80,7 @@ function render(focusHeading = false) {
   );
   app
     .querySelector("#continue")
-    ?.addEventListener("click", () => openActivity(suggestNext(p).id));
+    ?.addEventListener("click", () => startNextActivity());
   app.querySelector("#resume")?.addEventListener("click", () => {
     if (validAttempt(p.activeAttempt)) openActivity(p.activeAttempt.activityId);
     else {
@@ -117,7 +113,8 @@ function navigate(next) {
   render(true);
   window.scrollTo(0, 0);
 }
-async function openActivity(id) {
+async function openActivity(id, { fresh = false } = {}) {
+  if (!activities.some((a) => a.id === id)) return;
   if (busy) return;
   busy = true;
   stopAudio();
@@ -134,7 +131,9 @@ async function openActivity(id) {
           ? latest.activeAttempt
           : drafts[id];
       const next =
-        validAttempt(draft) && !latest.sessions.some((s) => s?.id === draft.id)
+        !fresh &&
+        validAttempt(draft) &&
+        !latest.sessions.some((s) => s?.id === draft.id)
           ? draft
           : {
               id:
@@ -342,7 +341,7 @@ function playAudio(a, d) {
   };
 }
 async function finishActivity(a) {
-  if (busy || attempt.phase !== 2) return;
+  if (busy || !attempt || attempt.phase !== 2) return;
   if (a.mode === "conversation" && !attempt.spoken) return;
   if (
     a.questions &&
@@ -400,7 +399,7 @@ function showCompletion(a, awarded = true) {
     };
   d.querySelector("#more").onclick = () => {
     d.close();
-    openActivity(suggestNext(p, a.id).id);
+    startNextActivity(a.id);
   };
   d.querySelector("#choose").onclick = () => {
     d.close();
@@ -416,4 +415,36 @@ window.addEventListener("storage", (event) => {
   if (!document.querySelector("#mission")?.open) render();
 });
 window.addEventListener("pagehide", stopAudio);
+async function startNextActivity(previousId = p.sessions.at(-1)?.activityId) {
+  const snapshot = readProgress(storage);
+  if (!snapshot.error) p = snapshot.progress;
+  const next = nextActivity(p, previousId);
+  if (next) await openActivity(next.id, { fresh: true });
+}
+let refreshing = false;
+async function refreshPlan() {
+  if (refreshing || busy) return;
+  refreshing = true;
+  try {
+    const before = JSON.stringify(p.dailyPlan);
+    await update((latest) => latest);
+    if (
+      before !== JSON.stringify(p.dailyPlan) &&
+      !document.querySelector("dialog[open]")
+    )
+      render();
+  } catch {
+    if (!document.querySelector("dialog[open]")) render();
+  } finally {
+    refreshing = false;
+  }
+}
+// Timers cover a tab left open at midnight; focus/visibility cover suspended phones.
+setInterval(refreshPlan, 15000);
+window.addEventListener("focus", refreshPlan);
+window.addEventListener("pageshow", refreshPlan);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshPlan();
+});
 render();
+refreshPlan();

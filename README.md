@@ -4,13 +4,13 @@ Miniapp mobile-first para praticar inglês A2–B1 em viagens, conversas cotidia
 
 ## Uma prática puxa a próxima
 
-- **Jornada:** três atividades curtas sugeridas para o tema escolhido, sem obrigação de ordem ou sequência. O modo de 5 minutos sugere 1 minuto de preparação, 3 de conversa e 1 de reflexão.
+- **Jornada:** três atividades sugeridas, sem obrigação de ordem ou sequência. A seleção é salva no navegador: recarregar não embaralha atividades pendentes. Cada conclusão substitui apenas o cartão correspondente, variando as modalidades. A trilha é renovada na troca de dia local, sem recarga (verificação a cada 15 segundos e ao voltar ao app), sem interromper uma atividade aberta. O modo de 5 minutos sugere 1 minuto de preparação, 3 de conversa e 1 de reflexão.
 - **Praticar:** biblioteca de 35 atividades com filtros combináveis de modalidade, tema e duração (2–5, 5–10 e 10–15 minutos). Nos limites, 5 minutos pertencem à faixa curta e 10 à intermediária, evitando duplicar resultados entre faixas.
 - **Conversação:** dez situações distintas e roteiros para usar no ChatGPT por voz, com expressões de apoio. O miniapp não acessa o microfone, integra o ChatGPT nem avalia sua fala. O roteiro precisa ser enviado em outra aba/aplicativo e o modo de voz depende da sua conta. Falar as respostas em voz alta também é uma alternativa.
 - **Listening:** dez atividades de áudio sintetizado pelo dispositivo, com duas perguntas cada. É possível parar, ouvir novamente ou abrir a transcrição. O áudio não é uma gravação humana; sotaque e qualidade dependem da voz instalada.
 - **Reading:** dez atividades com textos originais e perguntas de compreensão.
 - **Desafios rápidos:** cinco situações com feedback objetivo sobre a expressão escolhida.
-- **Progresso:** histórico completo, reflexões, dias de prática, XP, níveis e conquistas. “Continuar estudando” sugere uma atividade diferente da última, priorizando as menos praticadas no tema escolhido. Depois de concluir, escolha “Mais uma atividade”, “Escolher outra” ou apenas descanse.
+- **Progresso:** histórico completo, reflexões, dias de prática, XP, níveis e conquistas. “Continuar estudando” e “Mais uma atividade” iniciam uma prática nova, na primeira etapa, sem reaproveitar respostas, confirmação oral ou reflexão de rascunhos antigos. A seleção alterna modalidades e prioriza atividades inéditas. A trilha e as sugestões evitam exercícios realizados nos últimos três dias quando há alternativas; depois disso, priorizam as revisões mais antigas. O tema escolhido é um critério de preferência, não um bloqueio que obriga a repetir exercícios recentes. Com o catálogo esgotado, revisões são permitidas, sem repetir imediatamente a atividade anterior. Depois de concluir, escolha “Mais uma atividade”, “Escolher outra” ou apenas descanse.
 
 Pode repetir qualquer atividade no mesmo dia. Cada nova prática recebe uma identificação única e concede XP ao concluir as perguntas ou confirmar a prática oral. Recarregar, retornar de outra aba ou clicar duas vezes não concede XP novamente à mesma prática. Durações são estimativas, sem cronômetro obrigatório. Não há punição por pausas.
 
@@ -18,7 +18,7 @@ Pode repetir qualquer atividade no mesmo dia. Cada nova prática recebe uma iden
 
 A chave **`english-quest`** em `localStorage` permanece a mesma. Não há limpeza do armazenamento nem migração destrutiva. XP (incluindo os 40 XP iniciais de quem já estudou), histórico, reflexões, tema e campos desconhecidos são mantidos. Conquistas existentes continuam válidas: sessões antigas sem modalidade contam como conversação. O total antigo de XP não é recalculado a partir do histórico.
 
-Novos registros acrescentam `activityId`, `mode`, `minutes` e uma identificação única de tentativa. `activeAttempt` guarda a prática atual para retomar depois de recarregar; `practiceDrafts` mantém práticas interrompidas quando você escolhe outra. Voltar à mesma atividade retoma seu rascunho; após concluí-la, abri-la novamente começa uma nova prática. Reflexões são exibidas como texto, nunca como HTML.
+Novos registros acrescentam `activityId`, `mode`, `minutes` e uma identificação única de tentativa. `activeAttempt` guarda a prática atual para retomar depois de recarregar; `practiceDrafts` mantém práticas interrompidas quando você escolhe outra. Abrir diretamente uma atividade pela biblioteca ou tocar em “Retomar atividade” permite continuar seu rascunho. “Mais uma atividade” e “Continuar estudando” sempre criam uma tentativa limpa, mesmo se houver um rascunho antigo do exercício sugerido. Após concluir, abrir novamente começa uma nova prática. `dailyPlan` guarda a data local e os três cartões pendentes; sua atualização não altera XP, histórico, reflexões ou conquistas. Reflexões são exibidas como texto, nunca como HTML.
 
 Cada gravação parte da versão mais recente do armazenamento. Web Locks serializa as atualizações entre abas em navegadores compatíveis (incluindo Chromium atual). Sem essa API, há releitura síncrona antes de gravar; prefira uma aba por vez nesses navegadores. Dados ilegíveis não são sobrescritos; falhas de armazenamento são informadas e não geram confirmação de conclusão salva.
 
@@ -37,7 +37,7 @@ npm run dev
 Use o preview/encaminhamento de porta 5173 do editor, se disponível. Um endereço de loopback da máquina na nuvem não abre diretamente no celular. O servidor de desenvolvimento não é uma hospedagem pública definitiva.
 
 ```sh
-npm test          # 8 testes de dados legados, XP, catálogo e filtros
+npm test          # Testes de dados legados, XP, catálogo, filtros e trilha dinâmica
 npm run test:e2e  # Fluxos no Chromium, mobile e desktop
 npm run build    # Site estático em dist/, com assets relativos
 npm run test:pages # Build já gerado, servido em /english-quest/
@@ -77,3 +77,11 @@ Use Samsung Internet ou Chrome atualizado, no mesmo navegador em que seu progres
 - `src/views.js`: Jornada, biblioteca e progresso, com escape de dados pessoais.
 - `src/main.js`: navegação, execução/retomada das atividades, áudio e persistência.
 - `src/style.css`: estética original e layouts responsivos.
+
+## Conferência das correções da trilha e continuação
+
+- Na Jornada, conclua um cartão da trilha. Ao voltar, só esse cartão deve ter sido substituído; os outros dois permanecem. Recarregue e confira a mesma seleção pendente.
+- Deixe a aba aberta até a troca de dia local, ou retorne ao navegador no dia seguinte. A trilha deve ser renovada automaticamente. Uma atividade já aberta e sua reflexão devem continuar intactas.
+- Complete várias atividades usando “Mais uma atividade”: cada uma deve começar na primeira etapa, sem respostas selecionadas nem confirmação oral marcada. Antes de concluir, confira que o XP não mudou.
+- Mesmo que um exercício já tenha um rascunho na etapa de registro, o botão de nova atividade não deve pular etapas. Retomar deliberadamente pela Jornada continua funcionando.
+- Confira XP, registros anteriores e conquistas antes e depois dos testes. Não limpe o armazenamento. Os testes automatizados simulam a mudança de dia e rascunhos antigos com dados fictícios.
