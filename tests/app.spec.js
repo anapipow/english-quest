@@ -1,3 +1,4 @@
+import { activities } from "../src/activities.js";
 import { test, expect } from "@playwright/test";
 const legacy = {
   xp: 40,
@@ -44,6 +45,26 @@ async function finishVoice(page) {
     page.getByRole("heading", { name: "Você deu mais um passo." }),
   ).toBeVisible();
 }
+async function finishSuggested(page) {
+  await expect(page.locator("dialog[open] #mission-title")).toBeVisible();
+  const id = (await snapshot(page)).activeAttempt.activityId;
+  const selected = activities.find((a) => a.id === id);
+  if (selected.mode === "conversation") await finishVoice(page);
+  else {
+    for (const [qi, q] of selected.questions.entries())
+      await page
+        .locator(`[data-question="${qi}"][data-answer="${q.answer}"]`)
+        .click();
+    await page
+      .getByRole("button", { name: "Registrar atividade →", exact: true })
+      .click();
+    await page.locator("#finish").click();
+    await expect(
+      page.getByRole("heading", { name: "Você deu mais um passo." }),
+    ).toBeVisible();
+  }
+  return selected.xp;
+}
 async function answerReading(page) {
   await page
     .getByRole("button", {
@@ -73,16 +94,16 @@ test("legacy data survives multiple activities, progress continuation, same-day 
   await expect(page.locator(".achievement.earned")).toHaveCount(1);
   await page.getByRole("button", { name: /Continuar estudando/ }).click();
   const first = await page.locator("#mission-title").textContent();
-  await finishVoice(page);
+  const firstXp = await finishSuggested(page);
   let p = await snapshot(page);
-  expect(p.xp).toBe(80);
+  expect(p.xp).toBe(40 + firstXp);
   expect(p.sessions[0]).toEqual(legacy.sessions[0]);
   expect(p.settings).toEqual(legacy.settings);
   expect(p.achievements).toEqual(legacy.achievements);
   await page.getByRole("button", { name: "Ver meu progresso" }).click();
   await page.getByRole("button", { name: /Continuar estudando/ }).click();
   expect(await page.locator("#mission-title").textContent()).not.toBe(first);
-  await finishVoice(page);
+  const secondXp = await finishSuggested(page);
   await page
     .getByRole("button", { name: "Escolher outra", exact: true })
     .filter({ visible: true })
@@ -114,9 +135,11 @@ test("legacy data survives multiple activities, progress continuation, same-day 
     .click();
   await answerReading(page);
   await page.locator("#finish").click();
-  await expect.poll(async () => (await snapshot(page)).xp).toBe(130);
+  await expect
+    .poll(async () => (await snapshot(page)).xp)
+    .toBe(40 + firstXp + secondXp + 30);
   p = await snapshot(page);
-  expect(p.xp).toBe(130);
+  expect(p.xp).toBe(40 + firstXp + secondXp + 30);
   expect(p.sessions).toHaveLength(5);
   expect(new Set(p.sessions.map((s) => s.id)).size).toBe(5);
   await page.reload();
@@ -379,4 +402,101 @@ test("quota failure at completion preserves saved data and does not show success
     page.getByRole("heading", { name: "Você deu mais um passo." }),
   ).toHaveCount(0);
   expect(await snapshot(page)).toEqual(before);
+});
+
+test("Mais uma atividade always starts fresh even when every suggested activity has a final-stage draft", async ({
+  page,
+}) => {
+  const drafts = Object.fromEntries(
+    activities.map((a) => [
+      a.id,
+      {
+        id: `old-${a.id}`,
+        activityId: a.id,
+        phase: 2,
+        answers: a.questions?.map((q) => q.answer) || [],
+        spoken: true,
+        reflection: "old temporary reflection",
+      },
+    ]),
+  );
+  await seed(page, { ...legacy, practiceDrafts: drafts });
+  await page.goto("/");
+  await nav(page, "progress");
+  await page.getByRole("button", { name: /Continuar estudando/ }).click();
+  let expected = 40;
+  const attemptIds = [];
+  for (let i = 0; i < 3; i++) {
+    await expect(page.locator("dialog[open] #mission-title")).toBeVisible();
+    const state = await snapshot(page),
+      current = state.activeAttempt;
+    attemptIds.push(current.id);
+    expect(current.phase).toBe(0);
+    expect(current.answers).toEqual([]);
+    expect(current.spoken).toBe(false);
+    expect(current.reflection).toBe("");
+    expect(state.xp).toBe(expected);
+    await expect(page.locator("#finish")).toHaveCount(0);
+    expected += await finishSuggested(page);
+    expect((await snapshot(page)).xp).toBe(expected);
+    await page
+      .getByRole("button", { name: "Mais uma atividade →", exact: true })
+      .click();
+    await expect(page.locator("#mission-title")).toBeVisible();
+  }
+  expect(new Set(attemptIds).size).toBe(3);
+  const pending = (await snapshot(page)).activeAttempt;
+  await page.reload();
+  await page.getByRole("button", { name: /Retomar atividade/ }).click();
+  expect((await snapshot(page)).activeAttempt).toEqual(pending);
+  expect((await snapshot(page)).xp).toBe(expected);
+  expect((await snapshot(page)).sessions[0]).toEqual(legacy.sessions[0]);
+});
+
+test("daily slots replace only completed activity, persist on reload and roll over without reload or losing an open attempt", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-11-01T23:59:30") });
+  await seed(page);
+  await page.goto("/");
+  await expect
+    .poll(async () => (await snapshot(page)).dailyPlan?.date)
+    .toBe("2026-11-01");
+  const original = (await snapshot(page)).dailyPlan;
+  const id = original.slots[0].activityId;
+  await page.locator(`.trail-list [data-activity="${id}"]`).click();
+  const xp = await finishSuggested(page);
+  await page.getByRole("button", { name: "Ver meu progresso" }).click();
+  await nav(page, "today");
+  const replaced = (await snapshot(page)).dailyPlan;
+  expect(replaced.slots[0].activityId).not.toBe(id);
+  expect(replaced.slots.slice(1)).toEqual(original.slots.slice(1));
+  await page.reload();
+  expect((await snapshot(page)).dailyPlan).toEqual(replaced);
+  const nextId = replaced.slots[1].activityId;
+  await page.locator(`.trail-list [data-activity="${nextId}"]`).click();
+  await expect(page.locator("dialog[open] #mission-title")).toBeVisible();
+  const pending = (await snapshot(page)).activeAttempt;
+  const title = await page.locator("#mission-title").textContent();
+  await page.clock.fastForward(45000);
+  await expect
+    .poll(async () => (await snapshot(page)).dailyPlan.date)
+    .toBe("2026-11-02");
+  expect((await snapshot(page)).activeAttempt).toEqual(pending);
+  await expect(page.locator("#mission-title")).toHaveText(title);
+  await page
+    .getByRole("button", { name: "Fechar atividade", exact: true })
+    .click();
+  const tomorrow = (await snapshot(page)).dailyPlan;
+  expect(tomorrow.slots.map((s) => s.activityId)).not.toEqual(
+    replaced.slots.map((s) => s.activityId),
+  );
+  expect((await snapshot(page)).xp).toBe(40 + xp);
+  expect((await snapshot(page)).sessions[0]).toEqual(legacy.sessions[0]);
+  await expect(page.locator(".trail-list [data-activity]")).toHaveCount(3);
+  expect(
+    await page
+      .locator(".trail-list [data-activity]")
+      .evaluateAll((buttons) => buttons.map((b) => b.dataset.activity)),
+  ).toEqual(tomorrow.slots.map((s) => s.activityId));
 });

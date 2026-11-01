@@ -1,3 +1,9 @@
+import {
+  ensureDailyPlan,
+  chooseActivity,
+  nextActivity,
+  trailActivities,
+} from "../src/study-plan.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -13,8 +19,6 @@ import {
 import {
   activities,
   filterActivities,
-  dailyTrail,
-  suggestNext,
   activityPrompt,
 } from "../src/activities.js";
 const legacy = {
@@ -149,7 +153,7 @@ test("35 unique activities have valid A2-B1 content, answers, durations and orig
     10,
   );
 });
-test("filters compose, empty combinations exist, trail contains three short activities and next suggestions progress", () => {
+test("filters compose and empty combinations exist", () => {
   const filtered = filterActivities({
     topic: "festival",
     mode: "reading",
@@ -165,13 +169,117 @@ test("filters compose, empty combinations exist, trail contains three short acti
     filterActivities({ mode: "reading", duration: "long" }).length,
     0,
   );
-  const trail = dailyTrail("festival", "2026-10-31");
-  assert.equal(trail.length, 3);
-  assert.ok(trail.every((a) => a.minutes <= 5));
-  assert.equal(new Set(trail.map((a) => a.mode)).size, 3);
-  const p = {
+});
+
+test("pending slots persist across reload; completing one replaces only that slot and adds the missing modality", () => {
+  let p = ensureDailyPlan({ ...legacy }, "2026-11-01");
+  const before = structuredClone(p.dailyPlan);
+  const selected = trailActivities(p, "2026-11-01");
+  assert.equal(new Set(selected.map((a) => a.mode)).size, 3);
+  assert.deepEqual(
+    ensureDailyPlan(loadProgress(JSON.stringify(p)), "2026-11-01").dailyPlan,
+    before,
+  );
+  const a = selected[0];
+  p = ensureDailyPlan(
+    complete(p, {
+      id: "new-attempt",
+      activityId: a.id,
+      topic: a.topic,
+      mode: a.mode,
+      xp: a.xp,
+      date: "2026-11-01",
+    }),
+    "2026-11-01",
+  );
+  assert.notEqual(p.dailyPlan.slots[0].activityId, a.id);
+  assert.deepEqual(p.dailyPlan.slots.slice(1), before.slots.slice(1));
+  assert.equal(
+    new Set(
+      [...selected, ...trailActivities(p, "2026-11-01")].map((a) => a.mode),
+    ).size,
+    4,
+  );
+  assert.equal(p.xp, 40 + a.xp);
+  assert.deepEqual(p.sessions[0], legacy.sessions[0]);
+  assert.deepEqual(p.achievements, legacy.achievements);
+});
+test("day rollover produces a stable new selection while retaining XP and active practice", () => {
+  let p = ensureDailyPlan(
+    {
+      ...legacy,
+      activeAttempt: { id: "pending", phase: 2, reflection: "keep" },
+    },
+    "2026-11-01",
+  );
+  const yesterday = p.dailyPlan.slots.map((s) => s.activityId);
+  p = ensureDailyPlan(p, "2026-11-02");
+  assert.equal(p.dailyPlan.date, "2026-11-02");
+  assert.ok(p.dailyPlan.slots.every((s) => !yesterday.includes(s.activityId)));
+  assert.deepEqual(p.activeAttempt, {
+    id: "pending",
+    phase: 2,
+    reflection: "keep",
+  });
+  assert.equal(p.xp, 40);
+  assert.equal(ensureDailyPlan(p, "2026-11-02"), p);
+});
+test("unseen activities outrank old reviews; old reviews outrank recent repetitions; legacy voice records recognized", () => {
+  const [a, b, c] = activities.filter((a) => a.mode === "reading");
+  let p = {
     ...emptyProgress(),
-    sessions: [{ id: "x", activityId: activities[0].id }],
+    sessions: [
+      { activityId: a.id, date: "2026-10-20" },
+      { activityId: b.id, date: "2026-10-31" },
+    ],
   };
-  assert.notEqual(suggestNext(p).id, activities[0].id);
+  assert.equal(
+    chooseActivity(p, {
+      date: "2026-11-01",
+      exclude: activities
+        .filter((x) => ![a.id, b.id, c.id].includes(x.id))
+        .map((x) => x.id),
+    }).id,
+    c.id,
+  );
+  p.sessions.push({ activityId: c.id, date: "2026-10-30" });
+  assert.equal(
+    chooseActivity(p, {
+      date: "2026-11-01",
+      exclude: activities
+        .filter((x) => ![a.id, b.id, c.id].includes(x.id))
+        .map((x) => x.id),
+    }).id,
+    a.id,
+  );
+  assert.notEqual(
+    chooseActivity(legacy, { date: "2026-11-01", modes: ["conversation"] }).id,
+    "festival-conversation-1",
+  );
+});
+test("catalog exhaustion still replenishes unique valid slots and never mutates historical data", () => {
+  let p = ensureDailyPlan(emptyProgress(), "2026-11-01");
+  for (let i = 0; i < 80; i++) {
+    const id = p.dailyPlan.slots[0].activityId,
+      a = activities.find((a) => a.id === id);
+    p = ensureDailyPlan(
+      complete(p, {
+        id: `attempt-${i}`,
+        activityId: id,
+        date: "2026-11-01",
+        xp: a.xp,
+        mode: a.mode,
+      }),
+      "2026-11-01",
+    );
+    assert.equal(new Set(p.dailyPlan.slots.map((s) => s.activityId)).size, 3);
+    assert.notEqual(p.dailyPlan.slots[0].activityId, id);
+  }
+  assert.equal(p.sessions.length, 80);
+  assert.equal(
+    p.xp,
+    p.sessions.reduce((sum, s) => sum + s.xp, 0),
+  );
+  const next = nextActivity(p, p.sessions.at(-1).activityId, "2026-11-01");
+  assert.notEqual(next.id, p.sessions.at(-1).activityId);
 });

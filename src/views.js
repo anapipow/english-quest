@@ -1,10 +1,6 @@
+import { trailActivities, chooseActivity } from "./study-plan.js";
 import { topics } from "./content.js";
-import {
-  activities,
-  modes,
-  filterActivities,
-  dailyTrail,
-} from "./activities.js";
+import { activities, modes, filterActivities } from "./activities.js";
 import { level, localDate } from "./progress.js";
 export const escapeHTML = (value) =>
   String(value ?? "").replace(
@@ -23,11 +19,15 @@ export function activityCard(a, done = false) {
 export function homeView(p) {
   const topic = Object.hasOwn(topics, p.topic) ? p.topic : "festival",
     t = topics[topic];
-  const trail = dailyTrail(topic, localDate()),
+  const trail = trailActivities(p),
+    quick = chooseActivity(p, {
+      modes: ["conversation"],
+      exclude: activities.filter((a) => a.minutes !== 5).map((a) => a.id),
+    }),
     conversation = activities.find(
       (a) => a.topic === topic && a.mode === "conversation" && a.minutes === 12,
     );
-  return `<section class="intro"><div class="eyebrow green">LET’S MAKE IT HAPPEN</div><h1>Sua próxima conversa<br>começa <em>aqui.</em></h1><p>Inglês para viver histórias, conhecer pessoas e abrir caminhos.</p></section>${p.activeAttempt ? '<section class="resume-banner"><span>Uma prática está esperando por você.</span><button class="text-button" id="resume">Retomar atividade →</button></section>' : ""}<div class="dashboard"><div><section class="hero"><div class="hero-top"><span class="tag">✦ ESPAÇO PARA SUA VOZ</span><span>12 MIN · CONVERSAÇÃO</span></div><div class="hero-art" aria-hidden="true"><span class="orbit"></span><span class="speech">Hello,<br><i>new world.</i><b>✦</b></span><span class="art-star">✧</span></div><div class="hero-content"><div class="hero-category">${t.icon} ${t.name}</div><h2>${conversation.title}</h2><p>Uma situação real. Algumas palavras novas.<br>E mais confiança para falar.</p><button class="button cream" id="start" data-activity="${conversation.id}">Começar minha conversa <span>→</span></button><div class="hero-foot">◷ No seu ritmo <span>+40 XP ao concluir</span></div></div></section><button class="quick-card" id="quick" data-activity="${trail[2].id}"><span class="quick-icon">ϟ</span><span><strong>Só tenho 5 minutinhos</strong><small>Preparar, conversar, refletir. Também conta.</small></span><span class="arrow">→</span></button><section class="themes"><div class="section-heading"><h2>Sua trilha de hoje</h2><button data-tab="practice" class="text-button">Escolher outra →</button></div><p class="muted small">Três passos sugeridos. Faça quantos quiser, na ordem que preferir.</p><div class="trail-list">${trail
+  return `<section class="intro"><div class="eyebrow green">LET’S MAKE IT HAPPEN</div><h1>Sua próxima conversa<br>começa <em>aqui.</em></h1><p>Inglês para viver histórias, conhecer pessoas e abrir caminhos.</p></section>${p.activeAttempt ? '<section class="resume-banner"><span>Uma prática está esperando por você.</span><button class="text-button" id="resume">Retomar atividade →</button></section>' : ""}<div class="dashboard"><div><section class="hero"><div class="hero-top"><span class="tag">✦ ESPAÇO PARA SUA VOZ</span><span>12 MIN · CONVERSAÇÃO</span></div><div class="hero-art" aria-hidden="true"><span class="orbit"></span><span class="speech">Hello,<br><i>new world.</i><b>✦</b></span><span class="art-star">✧</span></div><div class="hero-content"><div class="hero-category">${t.icon} ${t.name}</div><h2>${conversation.title}</h2><p>Uma situação real. Algumas palavras novas.<br>E mais confiança para falar.</p><button class="button cream" id="start" data-activity="${conversation.id}">Começar minha conversa <span>→</span></button><div class="hero-foot">◷ No seu ritmo <span>+40 XP ao concluir</span></div></div></section><button class="quick-card" id="quick" data-activity="${quick.id}"><span class="quick-icon">ϟ</span><span><strong>Só tenho 5 minutinhos</strong><small>Preparar, conversar, refletir. Também conta.</small></span><span class="arrow">→</span></button><section class="themes"><div class="section-heading"><h2>Sua trilha de hoje</h2><button data-tab="practice" class="text-button">Escolher outra →</button></div><p class="muted small">Três passos sugeridos. Ao concluir, um novo aparece. Faça no seu ritmo.</p><div class="trail-list">${trail
     .map((a) =>
       activityCard(
         a,
